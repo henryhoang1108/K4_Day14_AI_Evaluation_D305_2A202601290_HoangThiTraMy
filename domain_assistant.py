@@ -244,26 +244,55 @@ class TextGenerator(Protocol):
 
 class OpenAIGenerator:
     def __init__(self, max_output_tokens: int = 300) -> None:
-        api_key = os.getenv("OPENAI_API_KEY", "").strip()
-        self.model = os.getenv("OPENAI_MODEL", "").strip()
-        if not api_key:
-            raise RuntimeError("OPENAI_API_KEY is missing from .env")
-        if not self.model:
-            raise RuntimeError("OPENAI_MODEL is missing from .env")
-        self.client = OpenAI(api_key=api_key)
+        groq_api_key = os.getenv("GROQ_API_KEY", "").strip()
+        openai_api_key = os.getenv("OPENAI_API_KEY", "").strip()
+
+        if groq_api_key:
+            self.provider = "groq"
+            self.api_key = groq_api_key
+            self.model = os.getenv("GROQ_MODEL", "").strip() or "llama-3.3-70b-versatile"
+            self.base_url = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1").strip()
+            self.client = OpenAI(api_key=self.api_key, base_url=self.base_url)
+        elif openai_api_key:
+            self.provider = "openai"
+            self.api_key = openai_api_key
+            self.model = os.getenv("OPENAI_MODEL", "").strip() or "gpt-4o-mini"
+            base_url = os.getenv("OPENAI_BASE_URL", "").strip()
+            self.client = OpenAI(api_key=self.api_key, base_url=base_url if base_url else None)
+        else:
+            raise RuntimeError("GROQ_API_KEY is missing from .env (or provide OPENAI_API_KEY)")
+
         self.max_output_tokens = max_output_tokens
 
     def generate(self, prompt: str) -> str:
-        response = self.client.responses.create(
-            model=self.model,
-            input=prompt,
-            temperature=0,
-            max_output_tokens=self.max_output_tokens,
-        )
-        answer = response.output_text.strip()
-        if not answer:
-            raise RuntimeError("OpenAI returned an empty answer")
-        return answer
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0,
+                max_tokens=self.max_output_tokens,
+            )
+            if response.choices and response.choices[0].message.content:
+                answer = response.choices[0].message.content.strip()
+                if answer:
+                    return answer
+        except Exception as e:
+            if hasattr(self.client, "responses"):
+                try:
+                    response = self.client.responses.create(
+                        model=self.model,
+                        input=prompt,
+                        temperature=0,
+                        max_output_tokens=self.max_output_tokens,
+                    )
+                    answer = response.output_text.strip()
+                    if answer:
+                        return answer
+                except Exception:
+                    pass
+            raise RuntimeError(f"Generation error ({self.provider}): {e}") from e
+
+        raise RuntimeError(f"{self.provider} returned an empty answer")
 
 
 @dataclass(frozen=True)

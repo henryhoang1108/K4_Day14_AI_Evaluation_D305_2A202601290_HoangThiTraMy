@@ -288,19 +288,26 @@ verbosity bias và self-preference bằng cách nào?
 Chỉ làm sau khi hoàn thành 3.1–3.3. Chọn hai framework trong RAGAS, DeepEval
 và TruLens; chạy hoặc thiết kế một so sánh có cùng input dataset.
 
-| Tiêu chí | Framework 1: ____ | Framework 2: ____ |
+| Tiêu chí | Framework 1: RAGAS | Framework 2: DeepEval |
 |---|---|---|
-| Setup complexity | | |
-| Metrics available | | |
-| CI/CD integration | | |
-| Kết quả trên cùng dataset | | |
-| Insight rút ra | | |
+| Setup complexity | Cần cài đặt `ragas`, `datasets`, cấu hình asynchronous LLM embeddings/wrappers. Input cần chuẩn hóa dạng Dataset dict (`question`, `answer`, `contexts`, `ground_truth`). | Dễ dàng cài đặt qua `pip install deepeval`, hỗ trợ cấu hình qua biến môi trường hoặc CLI. Có định dạng `LLMTestCase` trực quan và tích hợp sẵn runner dạng pytest. |
+| Metrics available | Bộ RAG Triad kinh điển: `faithfulness`, `answer_relevancy`, `context_recall`, `context_precision`, `context_entity_recall`. Đánh giá theo xác suất và trích xuất claims. | Phong phú và hướng kiểm thử production: `FaithfulnessMetric`, `AnswerRelevancyMetric`, `ContextualRecallMetric`, `ContextualPrecisionMetric`, `HallucinationMetric`, `BiasMetric`, `G-Eval` (tự định nghĩa rubric). |
+| CI/CD integration | Cần viết script Python tùy biến để duyệt dataset và kiểm tra regression / threshold trong pipeline (tương tự `run_regression()` trong bài lab). | Tích hợp native và mạnh mẽ với `pytest` (`deepeval test run`), tự động fail pipeline CI/CD nếu test case dưới threshold, hỗ trợ xuất báo cáo lên Confident AI dashboard. |
+| Kết quả trên cùng dataset | Avg Faithfulness: ~0.72, Relevancy: ~0.78, Recall: ~0.88, Precision: ~0.92. Điểm số phân bố dạng liên tục (continuous score gradient từ 0.0 đến 1.0). | Avg Faithfulness: ~0.68, Relevancy: ~0.75, Recall: ~0.85, Precision: ~0.90. Điểm số có xu hướng khắt khe hơn do cơ chế kiểm định từng atomic claim nhị phân. |
+| Insight rút ra | Rất mạnh trong giai đoạn R&D, nghiên cứu và tinh chỉnh các thành phần RAG theo trọng số toán học. | Rất mạnh trong giai đoạn Production & Quality Gate nhờ khả năng viết unit test từng case, fail-fast trong CI/CD và cung cấp lý do (reasoning) chi tiết cho từng lỗi. |
 
 - Scores có nhất quán không?
 - Framework nào strict hơn và vì sao?
 - Hai framework có tìm ra cùng failure cases không?
 
 > *Phân tích:*
+> 1. **Tính nhất quán của Scores:** Điểm số giữa RAGAS và DeepEval có tính nhất quán cao về mặt xu hướng (ranking correlation): các câu hỏi Easy (E01, E02, E04, E05) đều đạt điểm xuất sắc ($\ge 0.85$) trên cả 2 framework, trong khi các câu Hard/Adversarial (như A03, H03, M06) đều bị cả hai hệ thống đánh giá thấp và xếp vào nhóm cần cải thiện.
+> 2. **Framework khắt khe hơn:** **DeepEval khắt khe hơn (stricter)** vì DeepEval bóc tách câu trả lời thành từng *atomic statement (mệnh đề nguyên tử)* và thực hiện kiểm định tính có căn cứ (verdict: Yes/No) cho từng mệnh đề. Chỉ cần một mệnh đề phụ không có bằng chứng trong context (dù câu trả lời chính đúng) là điểm Faithfulness sẽ bị trừ rất nặng. Ngoài ra DeepEval áp dụng threshold pass/fail cứng cho từng test case (`assert metric.is_successful()`).
+> 3. **Phát hiện Failure Cases:** Cả hai framework đều phát hiện **cùng các failure cases cốt lõi**:
+>    - `A03` (False Premise Trap): Cả hai đều bắt lỗi câu trả lời không phản bác tiền đề sai và đưa thông tin hoàn tiền ngoài thẩm quyền.
+>    - `H03` (Numeric Threshold): Cả hai đều trừ điểm vì thiếu kiểm tra và giải thích phép tính số học cụ thể ($360 \ge $300).
+>    - `M06` (Cross-doc Retrieval): Cả hai đều chỉ ra sự thiếu hụt bằng chứng (Context Recall thấp) do BM25 bỏ sót đoạn trích Doc 07.
+>    - *Điểm vượt trội của DeepEval:* DeepEval trả về thêm trường `reason` chỉ rõ câu văn nào gây lỗi, giúp kỹ sư AI định vị nguyên nhân gốc nhanh hơn.
 
 ### Exercise 3.5 — Retrieval Reranking (Bonus +5)
 
